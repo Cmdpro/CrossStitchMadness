@@ -1,10 +1,12 @@
 ﻿using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using GlobalEnums;
 using GlobalSettings;
 using HarmonyLib;
 using System;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace CrossStitchMadness;
 
@@ -15,6 +17,13 @@ public class Plugin : BaseUnityPlugin
     public static int PARRY_COST = 0;
     Harmony harmony;
     public static bool IS_PARRY_COST = false;
+
+    private static ConfigEntry<bool>? freeParry;
+    private static ConfigEntry<bool>? parryAlwaysUnlocked;
+    private static ConfigEntry<bool>? parryGivesSilk;
+    private static ConfigEntry<bool>? extraDamage;
+    private static ConfigEntry<bool>? noSilkFromNormalAttack;
+
     public static ToolItem PARRY
     {
         get
@@ -29,6 +38,15 @@ public class Plugin : BaseUnityPlugin
         Logger.LogInfo($"Plugin {MyPluginInfo.PLUGIN_GUID} is loaded!");
         harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
         harmony.PatchAll();
+        freeParry = Config.Bind("Parrying", "No Cost", true);
+        parryAlwaysUnlocked = Config.Bind("Parrying", "Always Unlocked", true);
+        parryGivesSilk = Config.Bind("Parrying", "Gives Silk", true);
+        extraDamage = Config.Bind("Extra Balance", "Increased Enemy Damage", true);
+        noSilkFromNormalAttack = Config.Bind("Extra Balance", "No Silk From Normal Attacking", true);
+    }
+    public static bool FreeParryEnabled()
+    {
+        return freeParry.Value;
     }
     [HarmonyPatch(typeof(ToolHudIcon), "GetIsEmpty")]
     public class ToolHudIconPatch
@@ -38,7 +56,7 @@ public class Plugin : BaseUnityPlugin
         {
             ToolHudIcon me = __instance;
             PlayerData instance = PlayerData.instance;
-            if (me.CurrentTool == PARRY)
+            if (FreeParryEnabled() && me.CurrentTool == PARRY)
             {
                 __result = instance.silk < PARRY_COST;
                 return false;
@@ -53,7 +71,7 @@ public class Plugin : BaseUnityPlugin
         static bool Prefix(HeroController __instance, ToolItem tool, ref bool __result)
         {
             HeroController me = __instance;
-            if (tool == PARRY)
+            if (FreeParryEnabled() && tool == PARRY)
             {
                 if (me.playerData.silk >= PARRY_COST)
                 {
@@ -71,7 +89,7 @@ public class Plugin : BaseUnityPlugin
         static void Postfix(HeroController __instance)
         {
             HeroController me = __instance;
-            if (PARRY)
+            if (parryAlwaysUnlocked.Value && PARRY)
             {
                 if (!PARRY.IsUnlocked)
                 {
@@ -87,7 +105,7 @@ public class Plugin : BaseUnityPlugin
         [HarmonyPrefix]
         static bool Prefix(ref int __result)
         {
-            if (IS_PARRY_COST)
+            if (FreeParryEnabled() && IS_PARRY_COST)
             {
                 __result = PARRY_COST;
                 return false;
@@ -102,7 +120,7 @@ public class Plugin : BaseUnityPlugin
         static void Prefix(HeroController __instance, ref ToolItem ___willThrowTool)
         {
             HeroController me = __instance;
-            if (___willThrowTool == PARRY)
+            if (FreeParryEnabled() && ___willThrowTool == PARRY)
             {
                 IS_PARRY_COST = true;
             }
@@ -111,7 +129,7 @@ public class Plugin : BaseUnityPlugin
         static void Postfix(HeroController __instance, ref ToolItem ___willThrowTool)
         {
             HeroController me = __instance;
-            if (___willThrowTool == PARRY)
+            if (FreeParryEnabled() && ___willThrowTool == PARRY)
             {
                 IS_PARRY_COST = false;
                 EventRegister.SendEvent("SILK REFRESHED");
@@ -124,9 +142,12 @@ public class Plugin : BaseUnityPlugin
         [HarmonyPrefix]
         static bool Prefix(HitInstance hitInstance)
         {
-            if (hitInstance.AttackType == AttackTypes.Nail && !(hitInstance.Source && (hitInstance.Source.name.StartsWith("Harpoon Damager") || hitInstance.Source.name.StartsWith("Harpoon Dash Damager"))))
+            if (noSilkFromNormalAttack.Value)
             {
-                return false;
+                if (hitInstance.AttackType == AttackTypes.Nail && !(hitInstance.Source && (hitInstance.Source.name.StartsWith("Harpoon Damager") || hitInstance.Source.name.StartsWith("Harpoon Dash Damager"))))
+                {
+                    return false;
+                }
             }
             return true;
         }
@@ -138,18 +159,21 @@ public class Plugin : BaseUnityPlugin
         static void Postfix(HealthManager __instance, HitInstance hitInstance)
         {
             HealthManager me = __instance;
-            HitInstance hit = hitInstance;
-            if (ReversePatch.IsImmuneTo(me, hit, true))
+            if (parryGivesSilk.Value)
             {
-                return;
-            }
-            if (hit.Source.transform.parent.gameObject.name.StartsWith("Hornet_parry_stab_cross_slash_style"))
-            {
-                bool flag = hit.DamageDealt <= 0 && hit.HitEffectsType != EnemyHitEffectsProfile.EffectsTypes.LagHit;
-                if (hit.SilkGeneration == HitSilkGeneration.None) hit.SilkGeneration = hit.IsFirstHit ? HitSilkGeneration.FirstHit : HitSilkGeneration.Full;
-                if (!flag)
+                HitInstance hit = hitInstance;
+                if (ReversePatch.IsImmuneTo(me, hit, true))
                 {
-                    HeroController.instance.SilkGain(hit);
+                    return;
+                }
+                if (hit.Source.transform.parent.gameObject.name.StartsWith("Hornet_parry_stab_cross_slash_style"))
+                {
+                    bool flag = hit.DamageDealt <= 0 && hit.HitEffectsType != EnemyHitEffectsProfile.EffectsTypes.LagHit;
+                    if (hit.SilkGeneration == HitSilkGeneration.None) hit.SilkGeneration = hit.IsFirstHit ? HitSilkGeneration.FirstHit : HitSilkGeneration.Full;
+                    if (!flag)
+                    {
+                        HeroController.instance.SilkGain(hit);
+                    }
                 }
             }
         }
@@ -160,7 +184,10 @@ public class Plugin : BaseUnityPlugin
         [HarmonyPrefix]
         static void Prefix(ref int amount)
         {
-            amount += 1;
+            if (extraDamage.Value)
+            {
+                amount += 1;
+            }
         }
     }
     [HarmonyPatch]
