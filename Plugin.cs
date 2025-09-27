@@ -46,7 +46,7 @@ public class Plugin : BaseUnityPlugin
             return true;
         }
     }
-    [HarmonyPatch(typeof(HeroController), "CanThrowTool", [ typeof(ToolItem), typeof(AttackToolBinding), typeof(bool) ])]
+    [HarmonyPatch(typeof(HeroController), "CanThrowTool", [typeof(ToolItem), typeof(AttackToolBinding), typeof(bool)])]
     public class HeroControllerPatch
     {
         [HarmonyPrefix]
@@ -114,6 +114,7 @@ public class Plugin : BaseUnityPlugin
             if (___willThrowTool == PARRY)
             {
                 IS_PARRY_COST = false;
+                EventRegister.SendEvent("SILK REFRESHED");
             }
         }
     }
