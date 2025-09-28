@@ -208,7 +208,7 @@ public class Plugin : BaseUnityPlugin
                 {
                     return;
                 }
-                if (hit.Source.transform.parent.gameObject.name.StartsWith("Hornet_parry_stab_cross_slash_style"))
+                if (hit.Source && hit.Source.transform.parent && hit.Source.transform.parent.gameObject.name.StartsWith("Hornet_parry_stab_cross_slash_style"))
                 {
                     bool flag = hit.DamageDealt <= 0 && hit.HitEffectsType != EnemyHitEffectsProfile.EffectsTypes.LagHit;
                     if (hit.SilkGeneration == HitSilkGeneration.None) hit.SilkGeneration = hit.IsFirstHit ? HitSilkGeneration.FirstHit : HitSilkGeneration.Full;
