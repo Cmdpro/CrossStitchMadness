@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using GlobalEnums;
@@ -9,11 +9,12 @@ using System.Reflection;
 using UnityEngine;
 using UnityEngine.UIElements;
 using static UnityEngine.GridBrushBase;
+using static CrossStitchMadness.CrossStitchMadnessInfo;
 
 namespace CrossStitchMadness;
 
-[BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
-public class Plugin : BaseUnityPlugin
+[BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
+public class CrossStitchMadnessPlugin : BaseUnityPlugin
 {
     internal static new ManualLogSource Logger;
     public static int PARRY_COST = 0;
@@ -44,8 +45,8 @@ public class Plugin : BaseUnityPlugin
     {
         // Plugin startup logic
         Logger = base.Logger;
-        Logger.LogInfo($"Plugin {MyPluginInfo.PLUGIN_GUID} is loaded!");
-        harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
+        Logger.LogInfo($"Plugin {PLUGIN_GUID} is loaded!");
+        harmony = new Harmony(PLUGIN_GUID);
         harmony.PatchAll();
         freeParry = Config.Bind("Parrying", "No Cost", true);
         parryAlwaysUnlocked = Config.Bind("Parrying", "Always Unlocked", true);
@@ -204,7 +205,7 @@ public class Plugin : BaseUnityPlugin
             if (parryGivesSilk.Value)
             {
                 HitInstance hit = hitInstance;
-                if (ReversePatch.IsImmuneTo(me, hit, true))
+                if (me.IsImmuneTo(hit, true))
                 {
                     return;
                 }
@@ -316,7 +317,7 @@ public class Plugin : BaseUnityPlugin
                 if (justChanged)
                 {
                     EventRegister.SendEvent("SILK REFRESHED");
-                    ReversePatch.GetCrestSubmitAudio(inventoryToolCrestList.CurrentCrest).SpawnAndPlayOneShot(Audio.DefaultUIAudioSourcePrefab, me.transform.position, null);
+                    inventoryToolCrestList.CurrentCrest.crestSubmitAudio.SpawnAndPlayOneShot(Audio.DefaultUIAudioSourcePrefab, me.transform.position, null);
                 }
             }
         }
@@ -329,17 +330,6 @@ public class Plugin : BaseUnityPlugin
         static void Prefix(InventoryToolCrestList __instance)
         {
             inventoryToolCrestList = __instance;
-        }
-    }
-    [HarmonyPatch]
-    public class ReversePatch
-    {
-        [HarmonyReversePatch]
-        [HarmonyPatch(typeof(HealthManager), "IsImmuneTo")]
-        public static bool IsImmuneTo(HealthManager instance, HitInstance hitInstance, bool wasFullHit) => throw new NotImplementedException();
-        public static AudioEvent GetCrestSubmitAudio(InventoryToolCrest instance)
-        {
-            return Traverse.Create(instance).Field("crestSubmitAudio").GetValue<AudioEvent>();
         }
     }
 }
