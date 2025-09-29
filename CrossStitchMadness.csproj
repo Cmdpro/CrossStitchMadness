@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- 
   Imports silksong path properties only if present in order to allow CI builds. The file should be gitignored.
@@ -37,6 +37,7 @@
           <Binaries Include="$(TargetPath)"/>
           <Binaries Include="$(TargetDir)/$(TargetName).pdb"/>
           <Binaries Include="Thunderstore/*.*"/>
+          <Binaries Include="README.md"/>
       </ItemGroup>
 
       <Copy SourceFiles="@(Binaries)" DestinationFolder="$(SilksongFolder)/BepInEx/plugins/$(TargetName)" />
