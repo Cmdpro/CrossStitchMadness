@@ -36,6 +36,7 @@
       <ItemGroup>
           <Binaries Include="$(TargetPath)"/>
           <Binaries Include="$(TargetDir)/$(TargetName).pdb"/>
+          <Binaries Include="Thunderstore/*.*"/>
       </ItemGroup>
 
       <Copy SourceFiles="@(Binaries)" DestinationFolder="$(SilksongFolder)/BepInEx/plugins/$(TargetName)" />
