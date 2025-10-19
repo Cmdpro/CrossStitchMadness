@@ -66,11 +66,12 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
         }
         return null;
     }
-    [HarmonyPatch(typeof(ToolHudIcon), "GetIsEmpty")]
+    [HarmonyPatch]
     public class ToolHudIconPatch
     {
         [HarmonyPrefix]
-        static bool Prefix(ToolHudIcon __instance, ref bool __result)
+        [HarmonyPatch(typeof(ToolHudIcon), "GetIsEmpty")]
+        static bool GetIsEmptyPrefix(ToolHudIcon __instance, ref bool __result)
         {
             ToolHudIcon me = __instance;
             PlayerData instance = PlayerData.instance;
@@ -86,11 +87,12 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
             return true;
         }
     }
-    [HarmonyPatch(typeof(HeroController), "CanThrowTool", [typeof(ToolItem), typeof(AttackToolBinding), typeof(bool)])]
+    [HarmonyPatch]
     public class HeroControllerPatch
     {
         [HarmonyPrefix]
-        static bool Prefix(HeroController __instance, ToolItem tool, ref bool __result)
+        [HarmonyPatch(typeof(HeroController), "CanThrowTool", [typeof(ToolItem), typeof(AttackToolBinding), typeof(bool)])]
+        static bool CanThrowToolPrefix(HeroController __instance, ToolItem tool, ref bool __result)
         {
             HeroController me = __instance;
             if (tool.Type == ToolItemType.Skill)
@@ -107,12 +109,9 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
             }
             return true;
         }
-    }
-    [HarmonyPatch(typeof(HeroController), "Awake")]
-    public class HeroControllerAwakePatch
-    {
         [HarmonyPostfix]
-        static void Postfix(HeroController __instance)
+        [HarmonyPatch(typeof(HeroController), "Awake")]
+        static void AwakePostfix(HeroController __instance)
         {
             HeroController me = __instance;
             if (parryAlwaysUnlocked.Value && PARRY)
@@ -124,12 +123,77 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
                 }
             }
         }
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(HeroController), "SilkGain", [typeof(HitInstance)])]
+        static bool SilkGainPrefix(HitInstance hitInstance)
+        {
+            if (noSilkFromNormalAttack.Value)
+            {
+                if (hitInstance.AttackType == AttackTypes.Nail && !(hitInstance.Source && (hitInstance.Source.name.StartsWith("Harpoon Damager") || hitInstance.Source.name.StartsWith("Harpoon Dash Damager"))))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(HeroController), "ThrowTool")]
+        static void ThrowToolPrefix(HeroController __instance, ref ToolItem ___willThrowTool)
+        {
+            HeroController me = __instance;
+            TOOL_FOR_COST = ___willThrowTool;
+        }
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(HeroController), "ThrowTool")]
+        static void ThrowToolPostfix(HeroController __instance, ref ToolItem ___willThrowTool)
+        {
+            HeroController me = __instance;
+            if (GetSilkCost(TOOL_FOR_COST) != null)
+            {
+                EventRegister.SendEvent("SILK REFRESHED");
+            }
+            TOOL_FOR_COST = null;
+        }
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(HeroController), "GetWillThrowTool")]
+        static bool GetWillThrowToolPrefix(HeroController __instance, ref ToolItem ___willThrowTool, ref bool __result)
+        {
+            HeroController me = __instance;
+            if (SILK_SPEAR.IsUnlocked && ToolItemManager.IsToolEquipped(PARRY, ToolEquippedReadSource.Active))
+            {
+                if (SILK_SPEAR_OVERRIDE)
+                {
+                    ___willThrowTool = SILK_SPEAR;
+                    __result = true;
+                    return false;
+                }
+            }
+            return true;
+        }
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(HeroController), "FixedUpdate")]
+        static void Postfix(HeroController __instance)
+        {
+            if (SILK_SPEAR.IsUnlocked && ToolItemManager.IsToolEquipped(PARRY, ToolEquippedReadSource.Active) && !ToolItemManager.IsToolEquipped(SILK_SPEAR, ToolEquippedReadSource.Active))
+            {
+                HeroController me = __instance;
+                bool nearbySilk = IsNearThickSilkVine(me.gameObject);
+                bool justChanged = SILK_SPEAR_OVERRIDE != nearbySilk;
+                SILK_SPEAR_OVERRIDE = nearbySilk;
+                if (justChanged)
+                {
+                    EventRegister.SendEvent("SILK REFRESHED");
+                    inventoryToolCrestList.CurrentCrest.crestSubmitAudio.SpawnAndPlayOneShot(Audio.DefaultUIAudioSourcePrefab, me.transform.position, null);
+                }
+            }
+        }
     }
-    [HarmonyPatch(typeof(ToolItemManager), "AutoEquip", [typeof(ToolItem)])]
-    public class AutoEquipToolPatch
+    [HarmonyPatch]
+    public class ToolItemManagerPatch
     {
         [HarmonyPrefix]
-        static bool Prefix(ToolItem tool)
+        [HarmonyPatch(typeof(ToolItemManager), "AutoEquip", [typeof(ToolItem)])]
+        static bool AutoEquipPrefix(ToolItem tool)
         {
             if (tool != PARRY && tool.Type == ToolItemType.Skill)
             {
@@ -137,11 +201,24 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
             }
             return true;
         }
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(ToolItemManager), "GetAttackToolBinding")]
+        static bool GetAttackToolBindingPrefix(ToolItemManager __instance, ToolItem tool, ref AttackToolBinding? __result)
+        {
+            ToolItemManager me = __instance;
+            if (SILK_SPEAR_OVERRIDE && tool == SILK_SPEAR)
+            {
+                __result = ToolItemManager.GetAttackToolBinding(PARRY);
+                return false;
+            }
+            return true;
+        }
     }
-    [HarmonyPatch(typeof(PlayerData), "SilkSkillCost", MethodType.Getter)]
-    public class SilkSkillCostPatch
+    [HarmonyPatch]
+    public class PlayerDataPatch
     {
         [HarmonyPrefix]
+        [HarmonyPatch(typeof(PlayerData), "SilkSkillCost", MethodType.Getter)]
         static bool Prefix(ref int __result)
         {
             if (TOOL_FOR_COST != null)
@@ -158,48 +235,22 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
             }
             return true;
         }
-    }
-    [HarmonyPatch(typeof(HeroController), "ThrowTool")]
-    public class HeroControllerThrowToolPatch
-    {
         [HarmonyPrefix]
-        static void Prefix(HeroController __instance, ref ToolItem ___willThrowTool)
+        [HarmonyPatch(typeof(PlayerData), "TakeHealth")]
+        static void TakeHealthPrefix(ref int amount)
         {
-            HeroController me = __instance;
-            TOOL_FOR_COST = ___willThrowTool;
-        }
-        [HarmonyPostfix]
-        static void Postfix(HeroController __instance, ref ToolItem ___willThrowTool)
-        {
-            HeroController me = __instance;
-            if (GetSilkCost(TOOL_FOR_COST) != null)
+            if (extraDamage.Value)
             {
-                EventRegister.SendEvent("SILK REFRESHED");
+                amount += 1;
             }
-            TOOL_FOR_COST = null;
         }
     }
-    [HarmonyPatch(typeof(HeroController), "SilkGain", [typeof(HitInstance)])]
-    public class HeroControllerSilkGainPatch
-    {
-        [HarmonyPrefix]
-        static bool Prefix(HitInstance hitInstance)
-        {
-            if (noSilkFromNormalAttack.Value)
-            {
-                if (hitInstance.AttackType == AttackTypes.Nail && !(hitInstance.Source && (hitInstance.Source.name.StartsWith("Harpoon Damager") || hitInstance.Source.name.StartsWith("Harpoon Dash Damager"))))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-    [HarmonyPatch(typeof(HealthManager), "TakeDamage", [typeof(HitInstance)])]
-    public class HealthManagerTakeDamagePatch
+    [HarmonyPatch]
+    public class HealthManagerPatch
     {
         [HarmonyPostfix]
-        static void Postfix(HealthManager __instance, HitInstance hitInstance)
+        [HarmonyPatch(typeof(HealthManager), "TakeDamage", [typeof(HitInstance)])]
+        static void TakeDamagePostfix(HealthManager __instance, HitInstance hitInstance)
         {
             HealthManager me = __instance;
             if (parryGivesSilk.Value)
@@ -221,18 +272,6 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
             }
         }
     }
-    [HarmonyPatch(typeof(PlayerData), "TakeHealth")]
-    public class PlayerDataTakeHealthPatch
-    {
-        [HarmonyPrefix]
-        static void Prefix(ref int amount)
-        {
-            if (extraDamage.Value)
-            {
-                amount += 1;
-            }
-        }
-    }
     public static bool IsNearThickSilkVine(GameObject obj)
     {
         bool nearby = false;
@@ -251,40 +290,6 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
         }
         return nearby;
     }
-    [HarmonyPatch(typeof(HeroController), "GetWillThrowTool")]
-    public class GetWillThrowToolPatch
-    {
-        [HarmonyPrefix]
-        static bool Prefix(HeroController __instance, ref ToolItem ___willThrowTool, ref bool __result)
-        {
-            HeroController me = __instance;
-            if (SILK_SPEAR.IsUnlocked && ToolItemManager.IsToolEquipped(PARRY, ToolEquippedReadSource.Active))
-            {
-                if (SILK_SPEAR_OVERRIDE)
-                {
-                    ___willThrowTool = SILK_SPEAR;
-                    __result = true;
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-    [HarmonyPatch(typeof(ToolItemManager), "GetAttackToolBinding")]
-    public class GetAttackToolBindingPatch
-    {
-        [HarmonyPrefix]
-        static bool Prefix(ToolItemManager __instance, ToolItem tool, ref AttackToolBinding? __result)
-        {
-            ToolItemManager me = __instance;
-            if (SILK_SPEAR_OVERRIDE && tool == SILK_SPEAR)
-            {
-                __result = ToolItemManager.GetAttackToolBinding(PARRY);
-                return false;
-            }
-            return true;
-        }
-    }
     [HarmonyPatch]
     public class ToolItemManagerGetBoundAttackToolPatch
     {
@@ -302,32 +307,12 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
         }
     }
     static bool SILK_SPEAR_OVERRIDE = false;
-    [HarmonyPatch(typeof(HeroController), "FixedUpdate")]
-    public class HeroControllerFixedUpdatePatch
-    {
-        [HarmonyPostfix]
-        static void Postfix(HeroController __instance)
-        {
-            if (SILK_SPEAR.IsUnlocked && ToolItemManager.IsToolEquipped(PARRY, ToolEquippedReadSource.Active) && !ToolItemManager.IsToolEquipped(SILK_SPEAR, ToolEquippedReadSource.Active))
-            {
-                HeroController me = __instance;
-                bool nearbySilk = IsNearThickSilkVine(me.gameObject);
-                bool justChanged = SILK_SPEAR_OVERRIDE != nearbySilk;
-                SILK_SPEAR_OVERRIDE = nearbySilk;
-                if (justChanged)
-                {
-                    EventRegister.SendEvent("SILK REFRESHED");
-                    inventoryToolCrestList.CurrentCrest.crestSubmitAudio.SpawnAndPlayOneShot(Audio.DefaultUIAudioSourcePrefab, me.transform.position, null);
-                }
-            }
-        }
-    }
     static InventoryToolCrestList inventoryToolCrestList;
-    [HarmonyPatch(typeof(InventoryToolCrestList), "Awake")]
-    public class InventoryToolCrestListAwakePatch
+    public class InventoryToolCrestListPatch
     {
         [HarmonyPrefix]
-        static void Prefix(InventoryToolCrestList __instance)
+        [HarmonyPatch(typeof(InventoryToolCrestList), "Awake")]
+        static void AwakePrefix(InventoryToolCrestList __instance)
         {
             inventoryToolCrestList = __instance;
         }
