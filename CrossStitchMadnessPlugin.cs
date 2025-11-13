@@ -10,6 +10,9 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using static UnityEngine.GridBrushBase;
 using static CrossStitchMadness.CrossStitchMadnessInfo;
+using Silksong.FsmUtil;
+using System.Linq;
+using HutongGames.PlayMaker.Actions;
 
 namespace CrossStitchMadness;
 
@@ -26,6 +29,9 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
     private static ConfigEntry<bool>? parryGivesSilk;
     private static ConfigEntry<bool>? extraDamage;
     private static ConfigEntry<bool>? noSilkFromNormalAttack;
+    private static ConfigEntry<int>? silkPartsFromParry;
+    private static ConfigEntry<float>? counterattackDamageMult;
+    private static ConfigEntry<float>? parryTimeOverride;
 
     public static ToolItem PARRY
     {
@@ -41,6 +47,10 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
             return ToolItemManager.GetToolByName("Silk Spear");
         }
     }
+    static bool IsCrossStitchDamage(HitInstance hit)
+    {
+        return hit.Source && hit.Source.transform.parent && hit.Source.transform.parent.gameObject.name.StartsWith("Hornet_parry_stab_cross_slash_style");
+    }
     private void Awake()
     {
         // Plugin startup logic
@@ -51,6 +61,9 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
         freeParry = Config.Bind("Parrying", "No Cost", true);
         parryAlwaysUnlocked = Config.Bind("Parrying", "Always Unlocked", true);
         parryGivesSilk = Config.Bind("Parrying", "Gives Silk", true);
+        silkPartsFromParry = Config.Bind("Parrying", "Silk Parts From Parrying", 2);
+        counterattackDamageMult = Config.Bind("Parrying", "Counterattack Damage Mult", 0.75f);
+        parryTimeOverride = Config.Bind("Parrying", "Parry Time Override", 0.25f);
         extraDamage = Config.Bind("Extra Balance", "Increased Enemy Damage", true);
         noSilkFromNormalAttack = Config.Bind("Extra Balance", "No Silk From Normal Attacking", true);
     }
@@ -122,6 +135,9 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
                     ToolItemManager.AutoEquip(PARRY);
                 }
             }
+            Wait wait = me.silkSpecialFSM.GetState("Parry Stance").actions.OfType<Wait>().FirstOrDefault();
+            wait.time = parryTimeOverride.Value;
+            wait.enabled = true;
         }
         [HarmonyPrefix]
         [HarmonyPatch(typeof(HeroController), "SilkGain", [typeof(HitInstance)])]
@@ -248,6 +264,15 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
     [HarmonyPatch]
     public class HealthManagerPatch
     {
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(HealthManager), "TakeDamage", [typeof(HitInstance)])]
+        static void TakeDamagePrefix(HealthManager __instance, ref HitInstance hitInstance)
+        {
+            if (IsCrossStitchDamage(hitInstance))
+            {
+                hitInstance.DamageDealt = (int)Math.Ceiling(((float)hitInstance.DamageDealt)*counterattackDamageMult.Value);
+            }
+        }
         [HarmonyPostfix]
         [HarmonyPatch(typeof(HealthManager), "TakeDamage", [typeof(HitInstance)])]
         static void TakeDamagePostfix(HealthManager __instance, HitInstance hitInstance)
@@ -260,13 +285,30 @@ public class CrossStitchMadnessPlugin : BaseUnityPlugin
                 {
                     return;
                 }
-                if (hit.Source && hit.Source.transform.parent && hit.Source.transform.parent.gameObject.name.StartsWith("Hornet_parry_stab_cross_slash_style"))
+                if (IsCrossStitchDamage(hit))
                 {
                     bool flag = hit.DamageDealt <= 0 && hit.HitEffectsType != EnemyHitEffectsProfile.EffectsTypes.LagHit;
                     if (hit.SilkGeneration == HitSilkGeneration.None) hit.SilkGeneration = hit.IsFirstHit ? HitSilkGeneration.FirstHit : HitSilkGeneration.Full;
                     if (!flag)
                     {
-                        HeroController.instance.SilkGain(hit);
+                        HeroController hero = HeroController.instance;
+                        switch (hit.SilkGeneration)
+                        {
+                            case HitSilkGeneration.Full:
+                                hero.AddSilkParts(silkPartsFromParry.Value);
+                                return;
+                            case HitSilkGeneration.FirstHit:
+                                if (hit.IsFirstHit)
+                                {
+                                    hero.AddSilkParts(silkPartsFromParry.Value);
+                                    return;
+                                }
+                                break;
+                            case HitSilkGeneration.None:
+                                break;
+                            default:
+                                throw new ArgumentOutOfRangeException();
+                        }
                     }
                 }
             }
