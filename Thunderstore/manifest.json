@@ -1,7 +1,7 @@
 {
     "name": "CrossStitchMadness",
     "description": "Turns silksong into a parry-focused game focused around Cross Stitch",
-    "version_number": "1.0.0",
+    "version_number": "1.1.0",
     "dependencies": [
       "BepInEx-BepInExPack_Silksong-5.4.2303",
       "silksong_modding-Silksong_FsmUtil-0.3.1"

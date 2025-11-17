@@ -8,6 +8,6 @@ namespace CrossStitchMadness
     {
         public const string PLUGIN_GUID = "io.github.crossstitchmadness";
         public const string PLUGIN_NAME = "Cross Stitch Madness";
-        public const string PLUGIN_VERSION = "1.0.0";
+        public const string PLUGIN_VERSION = "1.1.0";
     }
 }
